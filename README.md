@@ -34,10 +34,11 @@ _Pandas Technical Analysis_ (**Pandas TA**) is an easy to use library that lever
 * [Pandas TA Strategies](#pandas-ta-strategies)
     * [Types of Strategies](#types-of-strategies)
 * [DataFrame Properties](#dataframe-properties)
+* [DataFrame Methods](#dataframe-methods)
 * [Indicators by Category](#indicators-by-category)
     * [Candles](#candles-3)
     * [Cycles](#cycles-1)
-    * [Momentum](#momentum-36)
+    * [Momentum](#momentum-37)
     * [Overlap](#overlap-31)
     * [Performance](#performance-4)
     * [Statistics](#statistics-9)
@@ -68,6 +69,7 @@ _Pandas Technical Analysis_ (**Pandas TA**) is an easy to use library that lever
 * Example Jupyter Notebooks under the [examples](https://github.com/twopirllc/pandas-ta/tree/master/examples) directory, including how to create Custom Strategies using the new [__Strategy__ Class](https://github.com/twopirllc/pandas-ta/tree/master/examples/PandaTA_Strategy_Examples.ipynb)
 * Potential Data Leaks: **ichimoku** and **dpo**. See indicator list below for details.
 * **UNDER DEVELOPMENT:** Performance Metrics
+* **UNDER DEVELOPMENT:** Easy Downloading of _ohlcv_ data using [yfinance](https://github.com/ranaroussi/yfinance). See ```help(ta.ticker)``` and ```help(ta.yf)```
 
 <br/>
 
@@ -83,7 +85,7 @@ $ pip install pandas_ta
 
 Latest Version
 --------------
-Best choice! Version: *0.2.48b*
+Best choice! Version: *0.2.62b*
 ```sh
 $ pip install -U git+https://github.com/twopirllc/pandas-ta
 ```
@@ -102,8 +104,12 @@ $ pip install -U git+https://github.com/twopirllc/pandas-ta.git@development
 import pandas as pd
 import pandas_ta as ta
 
+df = pd.DataFrame() # Empty DataFrame
+
 # Load data
 df = pd.read_csv("path/to/symbol.csv", sep=",")
+# OR if you have yfinance installed
+df = df.ta.ticker("aapl")
 
 # VWAP requires the DataFrame index to be a DatetimeIndex.
 # Replace "datetime" with the appropriate column from your DataFrame
@@ -138,8 +144,8 @@ help(df.ta)
 # List of all indicators
 df.ta.indicators()
 
-# Help about the log_return indicator
-help(ta.log_return)
+# Help about an indicator such as bbands
+help(ta.bbands)
 ```
 <br/>
 
@@ -177,7 +183,7 @@ Thanks for using **Pandas TA**!
 
 _Thank you for your contributions!_
 
-[alexonab](https://github.com/alexonab) | [allahyarzadeh](https://github.com/allahyarzadeh) | [codesutras](https://github.com/codesutras) | [daikts](https://github.com/daikts) | [DrPaprikaa](https://github.com/DrPaprikaa) | [edwardwang1](https://github.com/edwardwang1) | [ffhirata](https://github.com/ffhirata) | [FGU1](https://github.com/FGU1) | [lluissalord](https://github.com/lluissalord) | [maxdignan](https://github.com/maxdignan) | [NkosenhleDuma](https://github.com/NkosenhleDuma) | [pbrumblay](https://github.com/pbrumblay) | [RajeshDhalange](https://github.com/RajeshDhalange) | [rengel8](https://github.com/rengel8) | [rluong003](https://github.com/rluong003) | [SoftDevDanial](https://github.com/SoftDevDanial) | [tg12](https://github.com/tg12) | [twrobel](https://github.com/twrobel) | [whubsch](https://github.com/whubsch) | [witokondoria](https://github.com/witokondoria) | [YuvalWein](https://github.com/YuvalWein)
+[alexonab](https://github.com/alexonab) | [allahyarzadeh](https://github.com/allahyarzadeh) | [codesutras](https://github.com/codesutras) | [DrPaprikaa](https://github.com/DrPaprikaa) | [daikts](https://github.com/daikts) | [dorren](https://github.com/dorren) | [edwardwang1](https://github.com/edwardwang1) | [ffhirata](https://github.com/ffhirata) | [FGU1](https://github.com/FGU1) | [lluissalord](https://github.com/lluissalord) | [M6stafa](https://github.com/M6stafa) | [maxdignan](https://github.com/maxdignan) | [moritzgun](https://github.com/moritzgun) | [NkosenhleDuma](https://github.com/NkosenhleDuma) | [pbrumblay](https://github.com/pbrumblay) | [RajeshDhalange](https://github.com/RajeshDhalange) | [rengel8](https://github.com/rengel8) | [rluong003](https://github.com/rluong003) | [SoftDevDanial](https://github.com/SoftDevDanial) | [tg12](https://github.com/tg12) | [twrobel](https://github.com/twrobel) | [whubsch](https://github.com/whubsch) | [witokondoria](https://github.com/witokondoria) | [wouldayajustlookatit](https://github.com/wouldayajustlookatit) | [YuvalWein](https://github.com/YuvalWein)
 
 <br/>
 
@@ -424,6 +430,24 @@ df.ta.cores
 df.ta.datetime_ordered
 ```
 
+## **exchange**
+
+```python
+# Sets the Exchange to use when calculating the last_run property. Default: "NYSE"
+df.ta.exchange
+
+# Set the Exchange to use.
+# Available Exchanges: "ASX", "BMF", "DIFX", "FWB", "HKE", "JSE", "LSE", "NSE", "NYSE", "NZSX", "RTS", "SGX", "SSE", "TSE", "TSX"
+df.ta.exchange = "LSE"
+```
+
+## **last_run**
+
+```python
+# Returns the time Pandas TA was last run as a string.
+df.ta.last_run
+```
+
 ## **reverse**
 
 ```python
@@ -448,6 +472,85 @@ bothhl2 = df.ta.hl2(prefix="pre", suffix="post")
 print(bothhl2.name)  # "pre_HL2_post"
 ```
 
+## **time_range**
+
+```python
+# Returns the time range of the DataFrame as a float.
+# By default, it returns the time in "years"
+df.ta.time_range
+
+# Available time_ranges include: "years", "months", "weeks", "days", "hours", "minutes". "seconds"
+df.ta.time_range = "days"
+df.ta.time_range # prints DataFrame time in "days" as float
+```
+
+## **to_utc**
+
+```python
+# Sets the DataFrame index to UTC format.
+df.ta.to_utc
+```
+
+<br/><br/>
+
+
+# **DataFrame Methods**
+
+## **constants**
+
+```python
+import numpy as np
+
+# Add constant '1' to the DataFrame
+df.ta.constants(True, [1])
+# Remove constant '1' to the DataFrame
+df.ta.constants(False, [1])
+
+# Adding constants for charting
+import numpy as np
+chart_lines = np.append(np.arange(-4, 5, 1), np.arange(-100, 110, 10))
+df.ta.constants(True, chart_lines)
+# Removing some constants from the DataFrame
+df.ta.constants(False, np.array([-60, -40, 40, 60]))
+```
+
+## **indicators**
+
+```python
+# Prints the indicators and utility functions
+df.ta.indicators()
+
+# Returns a list of indicators and utility functions
+ind_list = df.ta.indicators(as_list=True)
+
+# Prints the indicators and utility functions that are not in the excluded list
+df.ta.indicators(exclude=["cg", "pgo", "ui"])
+# Returns a list of the indicators and utility functions that are not in the excluded list
+smaller_list = df.ta.indicators(exclude=["cg", "pgo", "ui"], as_list=True)
+```
+
+## **ticker**
+
+```python
+# Download Chart history using yfinance. (pip install yfinance) https://github.com/ranaroussi/yfinance
+# It uses the same keyword arguments as yfinance (excluding start and end)
+df = df.ta.ticker("aapl") # Default ticker is "SPY"
+
+# Period is used instead of start/end
+# Valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max
+# Default: "max"
+df = df.ta.ticker("aapl", period="1y") # Gets this past year
+
+# History by Interval by interval (including intraday if period < 60 days)
+# Valid intervals: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+# Default: "1d"
+df = df.ta.ticker("aapl", period="1y", interval="1wk") # Gets this past year in weeks
+df = df.ta.ticker("aapl", period="1mo", interval="1h") # Gets this past month in hours
+
+# BUT WAIT!! THERE'S MORE!!
+help(ta.yf)
+```
+
 <br/><br/>
 
 # **Indicators** (_by Category_)
@@ -456,13 +559,15 @@ print(bothhl2.name)  # "pre_HL2_post"
 * _Doji_: **cdl_doji**
 * _Inside Bar_: **cdl_inside**
 * _Heikin-Ashi_: **ha**
+<br/>
 
 
 ### **Cycles** (1)
 
 * _Even Better Sinewave_: **ebsw**
+<br/>
 
-### **Momentum** (36)
+### **Momentum** (37)
 
 * _Awesome Oscillator_: **ao**
 * _Absolute Price Oscillator_: **apo**
@@ -497,6 +602,8 @@ print(bothhl2.name)  # "pre_HL2_post"
     * Default is John Carter's. Enable Lazybear's with ```lazybear=True```
 * _Stochastic Oscillator_: **stoch**
 * _Stochastic RSI_: **stochrsi**
+* _TD Sequential_: **td_seq**
+    * Excluded from ```df.ta.strategy()```.
 * _Trix_: **trix**
 * _True strength index_: **tsi**
 * _Ultimate Oscillator_: **uo**
@@ -506,6 +613,7 @@ print(bothhl2.name)  # "pre_HL2_post"
 | _Moving Average Convergence Divergence_ (MACD) |
 |:--------:|
 | ![Example MACD](/images/SPY_MACD.png) |
+<br/>
 
 ### **Overlap** (31)
 
@@ -549,6 +657,7 @@ print(bothhl2.name)  # "pre_HL2_post"
 | _Simple Moving Averages_ (SMA) and _Bollinger Bands_ (BBANDS) |
 |:--------:|
 | ![Example Chart](/images/TA_Chart.png) |
+<br/>
 
 
 ### **Performance** (4)
@@ -563,7 +672,7 @@ Use parameter: cumulative=**True** for cumulative results.
 | _Percent Return_ (Cumulative) with _Simple Moving Average_ (SMA) |
 |:--------:|
 | ![Example Cumulative Percent Return](/images/SPY_CumulativePercentReturn.png) |
-
+<br/>
 
 ### **Statistics** (9)
 
@@ -580,6 +689,7 @@ Use parameter: cumulative=**True** for cumulative results.
 | _Z Score_ |
 |:--------:|
 | ![Example Z Score](/images/SPY_ZScore.png) |
+<br/>
 
 ### **Trend** (15)
 
@@ -687,33 +797,19 @@ result = ta.cagr(df.close)
     * **Moving Average Choices**: dema, ema, fwma, hma, linreg, midpoint, pwma, rma, sinwma, sma, swma, t3, tema, trima, vidya, wma, zlma.
 * An _experimental_ and independent __Watchlist__ Class located in the [Examples](https://github.com/twopirllc/pandas-ta/tree/master/examples/watchlist.py) Directory that can be used in conjunction with the new __Strategy__ Class.
 * _Linear Regression_ (**linear_regression**) is a new utility method for Simple Linear Regression using _Numpy_ or _Scikit Learn_'s implementation.
-* Added utility/convience function, ```to_utc```, to convert the DataFrame index to UTC. See: ```help(ta.to_utc)```
+* Added utility/convience function, ```to_utc```, to convert the DataFrame index to UTC. See: ```help(ta.to_utc)``` **Now** as a Pandas TA DataFrame Property to easily convert the DataFrame index to UTC.
 
 <br />
 
-## **Breaking Indicators**
-* _Bollinger Bands_ (**bbands**): New column 'bandwidth' appended to the returning DataFrame. See: ```help(ta.bbands)```
-* _Volume Weighted Average Price_ (**vwap**): **Requires** the DataFrame index to be a DatetimeIndex.
-
-
 ## **New Indicators**
 * _Arnaud Legoux Moving Average_ (**alma**) uses the curve of the Normal (Gauss) distribution to allow regulating the smoothness and high sensitivity of the indicator. See: ```help(ta.alma)```
-* _Drawdown_ (**drawdown**) shows the peak-to-trough decline during a specific period for an investment,
 trading account, or fund. See: ```help(ta.drawdown)```
 * _Even Better Sinewave_ (**ebsw**) measures market cycles and uses a low pass filter to remove noise. See: ```help(ta.ebsw)```
-* _Gann High-Low Activator_ (**hilo**) was created by Robert Krausz in a 1998. See: ```help(ta.hilo)```
-* _Holt-Winter Moving Average_ (**hwma**) is a three-parameter moving average by the Holt-Winter method.
-* _McGinley Dynamic_ (**mcgd**) is an overlap indicator developed by John R. McGinley, a Certified Market Technician. See: ```help(ta.mcgd)```
-* _Price Volume Rank_ (**pvr**) was created by Anthony J. Macek. See: ```help(ta.pvr)```
-* _Quantitative Qualitative Estimation_ (**qqe**) is like SuperTrend for a Smoothed RSI. See: ```help(ta.qqe)```
-article in the June, 1994 issue of Technical Analysis of Stocks & Commodities Magazine. See: ```help(ta.pvr)```
-* _Relative Strength Xtra_ (**rsx**) is based on the popular RSI indicator and inspired by the work Jurik Research. See: ```help(ta.rsx)```
-* _Ehler's Super Smoother Filter_ (**ssf**). Ehler's solution to reduce lag and remove aliasing noise compared to other common moving average indicators. See: ```help(ta.ssf)```
-* _Elder's Thermometer_ (**thermo**) measures price volatility. See: ```help(ta.thermo)```
-* _TTM Trend_ (**ttm_trend**) is a trend indicator inspired from John Carter's book "Mastering the Trade" issue of Stocks & Commodities Magazine. It is a moving average based trend indicator consisting of two different simple moving averages. See: ```help(ta.ttm_trend)```
-* _Variable Index Dynamic Average_ (**vidya**) is a popular Dynamic Moving Average created by Tushar Chande. See: ```help(ta.vidya)```
+* _Tom DeMark's Sequential_ (**td_seq**) attempts to identify a price point where an uptrend or a downtrend exhausts itself and reverses. Currently exlcuded from ```df.ta.strategy()``` for performance reasons. See: ```help(ta.td_seq)```
+<br/>
 
 ## **Updated Indicators**
+* _ADX_ (**adx**): Added ```mamode``` with default "**RMA**" and with the same ```mamode``` options as TradingView. See ```help(ta.adx)```.
 * _Average True Range_ (**atr**): The default ```mamode``` is now "**RMA**" and with the same ```mamode``` options as TradingView. See ```help(ta.atr)```.
 * _Bollinger Bands_ (**bbands**): New argument ```ddoff``` to control the Degrees of Freedom. Default is 0.  See ```help(ta.bbands)```.
 * _Decreasing_ (**decreasing**): New argument ```strict``` checks if the series is continuously decreasing over period ```length```. Default: ```False```. See ```help(ta.decreasing)```.

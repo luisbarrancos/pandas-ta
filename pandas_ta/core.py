@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 from dataclasses import dataclass, field
-from datetime import datetime
-from math import log as mlog
 from multiprocessing import cpu_count, Pool
 from time import perf_counter
 from typing import List, Tuple
 
 import pandas as pd
-from numpy import ndarray as npndarray
+from numpy import log10 as npLog10
+from numpy import ndarray as npNdarray
 from pandas.core.base import PandasObject
 
-from pandas_ta import version, Category
+from pandas_ta import Category, version
 from pandas_ta.candles import *
 from pandas_ta.cycles import *
 from pandas_ta.momentum import *
@@ -22,6 +21,8 @@ from pandas_ta.volatility import *
 from pandas_ta.volume import *
 from pandas_ta.utils import *
 
+
+df = pd.DataFrame()
 
 # Strategy DataClass
 @dataclass
@@ -50,8 +51,8 @@ class Strategy:
     ta: List = field(default_factory=list)  # Required.
     # Helpful. More descriptive version or notes or w/e.
     description: str = "TA Description"
-    # Optional. May change type later to datetime
-    created: str = datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
+    # Optional. Gets Exchange Time and Local Time execution time
+    created: str = get_time(to_string=True)
 
     def __post_init__(self):
         has_name = True
@@ -118,9 +119,7 @@ class BasePandasObject(PandasObject):
     """
 
     def __init__(self, df, **kwargs):
-        if df.empty:
-            return
-
+        if df.empty: return
         if len(df.columns) > 0:
             common_names = {
                 "Date": "date",
@@ -133,6 +132,8 @@ class BasePandasObject(PandasObject):
                 "Close": "close",
                 "Adj Close": "adj_close",
                 "Volume": "volume",
+                "Dividends": "dividends",
+                "Stock Splits": "split",
             }
             # Preemptively drop the rows that are all NaNs
             # Might need to be moved to AnalysisIndicators.__call__() to be
@@ -157,17 +158,23 @@ class BasePandasObject(PandasObject):
 # Pandas TA - DataFrame Analysis Indicators
 @pd.api.extensions.register_dataframe_accessor("ta")
 class AnalysisIndicators(BasePandasObject):
-    """AnalysisIndicators is a class that extends the Pandas DataFrame via
-    Pandas @pd.api.extensions.register_dataframe_accessor('name') decorator.
+    """
+    This Pandas Extension is named 'ta' for Technical Analysis. In other words,
+    it is a Numerical Time Series Feature Generator where the Time Series data
+    is biased towards Financial Market data; typical data includes columns
+    named :"open", "high", "low", "close", "volume".
 
-    This Pandas Extension is named 'ta' for Technical Analysis that allows us
-    to apply technical indicators by extension.  Even though 'ta' is a
-    Pandas DataFrame Extension, you can still call the Indicators
-    individually. Use help() if needed.
+    This TA Library hopefully allows you to apply familiar and unique Technical
+    Analysis Indicators easily with the DataFrame Extension named 'ta'. Even
+    though 'ta' is a Pandas DataFrame Extension, you can still call Technical
+    Analysis indicators individually if you are more comfortable with that
+    approach or it allows you to easily and automatically apply the indicators
+    with the strategy method. See: help(ta.strategy).
 
-    By default the 'ta' extension uses lower case column names: open, high,
-    low, close, and volume.  You can override the defaults by providing the
-    it's replacement name when calling the indicator.  For example, to call the indicator hl2().
+    By default, the 'ta' extension uses lower case column names: open, high,
+    low, close, and volume. You can override the defaults by providing the it's
+    replacement name when calling the indicator. For example, to call the
+    indicator hl2().
 
     With 'default' columns: open, high, low, close, and volume.
     >>> df.ta.hl2()
@@ -236,14 +243,27 @@ class AnalysisIndicators(BasePandasObject):
 
     _adjusted = None
     _cores = cpu_count()
-    _mp = False
+    _df = DataFrame()
+    _exchange = "NYSE"
+    _time_range = "years"
+    _last_run = get_time(_exchange, to_string=True)
+
+    # def __init__(self, pandas_obj):
+    #     # self._validate(pandas_obj)
+    #     self._df = pandas_obj
+    #     self._last_run = get_time(self._exchange, to_string=True)
+
+    # @staticmethod
+    # def _validate(df: Tuple[pd.DataFrame, pd.Series]):
+    #     if isinstance(df, pd.Series) or isinstance(df, pd.DataFrame):
+    #         raise AttributeError("[X] Must be either a Pandas Series or DataFrame.")
 
     # DataFrame Behavioral Methods
     def __call__(
             self, kind: str = None,
-            timed: bool = False, verbose: bool = False, **kwargs
+            timed: bool = False, version: bool = False, **kwargs
         ):
-        if verbose: print(f"Pandas TA - Technical Analysis Indicators - v{self.version}")
+        if version: print(f"Pandas TA - Technical Analysis Indicators - v{self.version}")
         try:
             if isinstance(kind, str):
                 kind = kind.lower()
@@ -254,6 +274,7 @@ class AnalysisIndicators(BasePandasObject):
 
                 # Run the indicator
                 result = fn(**kwargs)  # = getattr(self, kind)(**kwargs)
+                self._last_run = get_time(self.exchange, to_string=True) # Save when it completed it's run
 
                 if timed:
                     result.timed = final_time(stime)
@@ -295,17 +316,20 @@ class AnalysisIndicators(BasePandasObject):
             self._cores = cpus
 
     @property
-    def mp(self) -> bool:
-        """property: df.ta.mp"""
-        return self._mp
+    def exchange(self) -> str:
+        """Returns the current Exchange. Default: "NYSE"."""
+        return self._exchange
 
-    @mp.setter
-    def mp(self, value: bool) -> None:
-        """property: df.ta.mp = False (Default)"""
-        if value is not None and isinstance(value, bool):
-            self._mp = value
-        else:
-            self._mp = False
+    @exchange.setter
+    def exchange(self, value: str) -> None:
+        """property: df.ta.exchange = "LSE" """
+        if value is not None and isinstance(value, str) and value in EXCHANGE_TZ.keys():
+            self._exchange = value
+
+    @property
+    def last_run(self) -> str:
+        """Returns the time when the DataFrame was last run."""
+        return self._last_run
 
     # Public Get DataFrame Properties
     @property
@@ -325,6 +349,24 @@ class AnalysisIndicators(BasePandasObject):
     def reverse(self) -> pd.DataFrame:
         """Reverses the DataFrame. Simply: df.iloc[::-1]"""
         return self._df.iloc[::-1]
+
+    @property
+    def time_range(self) -> float:
+        """Returns the time ranges of the DataFrame as a float. Default is in "years". help(ta.toal_time)"""
+        return total_time(self._df, self._time_range)
+
+    @time_range.setter
+    def time_range(self, value: str) -> None:
+        """property: df.ta.time_range = "years" (Default)"""
+        if value is not None and isinstance(value, str):
+            self._time_range = value
+        else:
+            self._time_range = "years"
+
+    @property
+    def to_utc(self) -> None:
+        """Sets the DataFrame index to UTC format"""
+        self._df = to_utc(self._df)
 
     @property
     def version(self) -> str:
@@ -383,8 +425,7 @@ class AnalysisIndicators(BasePandasObject):
     def _get_column(self, series):
         """Attempts to get the correct series or 'column' and return it."""
         df = self._df
-        if df is None:
-            return
+        if df is None: return
 
         # Explicitly passing a pd.Series to override default.
         if isinstance(series, pd.Series):
@@ -425,8 +466,10 @@ class AnalysisIndicators(BasePandasObject):
         * Applies prefixes and/or suffixes
         * Appends the result to main DataFrame
         """
+        verbose = kwargs.pop("verbose", False)
         if not isinstance(result, (pd.Series, pd.DataFrame)):
-            print(f"[X] Oops! The result was not a Series or DataFrame.")
+            if verbose:
+                print(f"[X] Oops! The result was not a Series or DataFrame.")
             return self._df
         else:
             # Append only specific columns to the dataframe (via
@@ -478,7 +521,7 @@ class AnalysisIndicators(BasePandasObject):
         Remove constant '1' to the DataFrame
         >>> df.ta.constants(False, [1])
 
-        Adding the constants for the charts
+        Adding constants for charting
         >>> import numpy as np
         >>> chart_lines = np.append(np.arange(-4, 5, 1), np.arange(-100, 110, 10))
         >>> df.ta.constants(True, chart_lines)
@@ -495,7 +538,7 @@ class AnalysisIndicators(BasePandasObject):
             Returns nothing to the user.  Either adds or removes constant ranges
             from the working DataFrame.
         """
-        if isinstance(values, npndarray) or isinstance(values, list):
+        if isinstance(values, npNdarray) or isinstance(values, list):
             if append:
                 for x in values:
                     self._df[f"{x}"] = x
@@ -507,12 +550,11 @@ class AnalysisIndicators(BasePandasObject):
     def indicators(self, **kwargs):
         """List of Indicators
 
-        Args:
-            kwargs:
-                as_list (bool, optional):  Default: False.  When True, it
-                    returns a list of the indicators.
-                exclude (list, optional):  Default: None.  The passed in list
-                    will be excluded from the indicators list.
+        kwargs:
+            as_list (bool, optional): When True, it returns a list of the
+                indicators. Default: False.
+            exclude (list, optional): The passed in list will be excluded
+                from the indicators list. Default: None.
 
         Returns:
             Prints the list of indicators. If as_list=True, then a list.
@@ -526,8 +568,12 @@ class AnalysisIndicators(BasePandasObject):
             "categories",
             "cores",
             "datetime_ordered",
-            "mp",
+            "exchange",
+            "last_run",
             "reverse",
+            "ticker",
+            "time_range",
+            "to_utc",
             "version",
         ]
 
@@ -561,21 +607,30 @@ class AnalysisIndicators(BasePandasObject):
         """Strategy Method
 
         An experimental method that by default runs all applicable indicators.
-        Future implementations will allow more specific indicator generation through
-        a json config file.
+        Future implementations will allow more specific indicator generation
+        with possibly as json, yaml config file or an sqlite3 table.
 
-        Args:
-            name (str, optional): Default: "all"
-            exclude (list, optional): Default: []. List of indicator names to exclude.
 
-            kwargs:
-                (optional) Default: {}. Any indicator argument you want to modify.
-                    For example, length=20 or offset=-1 or high=df["high"] ...
+        Kwargs:
+            chunksize (bool): Adjust the chunksize for the Multiprocessing Pool.
+                Default: Number of cores of the OS
+            exclude (list): List of indicator names to exclude. Some are
+                excluded by default for various reasons; they require additional
+                sources, performance (td_seq), not a ohlcv chart (vp) etc.
+            name (str): Select all indicators or indicators by
+                Category such as: "candles", "cycles", "momentum", "overlap",
+                "performance", "statistics", "trend", "volatility", "volume", or
+                "all". Default: "all"
+            ordered (bool): Whether to run "all" in order. Default: True
+            timed (bool): Show the process time of the strategy().
+                Default: False
+            verbose (bool): Provide some additional insight on the progress of
+                the strategy() execution. Default: False
         """
         # cpus = cpu_count()
         # Ensure indicators are appended to the DataFrame
         kwargs["append"] = True
-        all_ordered = kwargs.pop("ordered", False)
+        all_ordered = kwargs.pop("ordered", True)
         mp_chunksize = kwargs.pop("chunksize", self.cores)
 
         # Initialize
@@ -591,6 +646,7 @@ class AnalysisIndicators(BasePandasObject):
             "long_run",
             "short_run",
             "trend_return",
+            "td_seq", # Performance exclusion
             "vp",
         ]
 
@@ -654,9 +710,9 @@ class AnalysisIndicators(BasePandasObject):
             _total_ta = len(ta)
             pool = Pool(self.cores)
             # Some magic to optimize chunksize for speed based on total ta indicators
-            _chunksize = mp_chunksize - 1 if mp_chunksize > _total_ta else int(mlog(_total_ta)) + 1
+            _chunksize = mp_chunksize - 1 if mp_chunksize > _total_ta else int(npLog10(_total_ta)) + 1
             if verbose:
-                print(f"[i] Multiprocessing: {self.cores} of {cpu_count()} cores of {_total_ta} indicators.")
+                print(f"[i] Multiprocessing {_total_ta} indicators with {_chunksize} chunks and {self.cores}/{cpu_count()} cpus.")
 
             results = None
             if mode["custom"]:
@@ -682,6 +738,7 @@ class AnalysisIndicators(BasePandasObject):
 
             pool.close()
             pool.join()
+            self._last_run = get_time(self.exchange, to_string=True)
 
         else:
             # Without multiprocessing:
@@ -703,14 +760,75 @@ class AnalysisIndicators(BasePandasObject):
         # DataFrame
         [self._post_process(r, **kwargs) for r in results]
 
-        if timed:
-            ftime = final_time(stime)
-
         if verbose:
             print(f"[i] Total indicators: {len(ta)}")
             print(f"[i] Columns added: {len(self._df.columns) - initial_column_count}")
+            print(f"[i] Last Run: {self._last_run}")
         if timed:
-            print(f"[i] Runtime: {ftime}")
+            print(f"[i] Runtime: {final_time(stime)}")
+
+    def ticker(self, ticker, **kwargs):
+        """ticker
+
+        This method downloads Historical Data if the package yfinance is installed.
+        Additionally it can run a ta.Strategy; Builtin or Custom. It returns a
+        DataFrame if there the DataFrame is not empty, otherwise it exits. For
+        additional yfinance arguments, use help(ta.yf).
+
+        Historical Data
+        >>> df = df.ta.ticker("aapl")
+        More specifically
+        >>> df = df.ta.ticker("aapl", period="max", interval="1d", kind=None)
+
+        Changing the period of Historical Data
+        Period is used instead of start/end
+        >>> df = df.ta.ticker("aapl", period="1y")
+
+        Changing the period and interval of Historical Data
+        Retrieves the past year in weeks
+        >>> df = df.ta.ticker("aapl", period="1y", interval="1wk")
+        Retrieves the past month in hours
+        >>> df = df.ta.ticker("aapl", period="1mo", interval="1h")
+
+        Show everything
+        >>> df = df.ta.ticker("aapl", kind="all")
+
+        Args:
+            ticker (str): Any string for a ticker you would use with yfinance.
+                Default: "SPY"
+        Kwargs:
+            kind (str): Options see above. Default: "history"
+            ds (str): Data Source to use. Default: "yahoo"
+            strategy (str | ta.Strategy): Which strategy to apply after
+                downloading chart history. Default: None
+
+            See help(ta.yf) for additional kwargs
+
+        Returns:
+            Exits if the DataFrame is empty or None
+            Otherwise it returns a DataFrame
+        """
+        ds = kwargs.pop("ds", "yahoo")
+        strategy = kwargs.pop("strategy", None)
+
+        # Fetch the Data
+        ds = ds.lower() is not None and isinstance(ds, str)
+        # df = av(ticker, **kwargs) if ds and ds == "av" else yf(ticker, **kwargs)
+        df = yf(ticker, **kwargs)
+
+        if df is None: return
+        elif df.empty:
+            print(f"[X] DataFrame is empty: {df.shape}")
+            return
+        else:
+            if kwargs.pop("lc_input", False):
+                df.index.name = df.index.name.lower()
+                df.columns = df.columns.str.lower()
+            self._df = df
+
+        if strategy is not None: self.strategy(strategy, **kwargs)
+        return df
+
 
     # Public DataFrame Methods: Indicators and Utilities
     # Candles
@@ -937,6 +1055,11 @@ class AnalysisIndicators(BasePandasObject):
         low = self._get_column(kwargs.pop("low", "low"))
         close = self._get_column(kwargs.pop("close", "close"))
         result = stochrsi(high=high, low=low, close=close, length=length, rsi_length=rsi_length, k=k, d=d, offset=offset, **kwargs)
+        return self._post_process(result, **kwargs)
+
+    def td_seq(self, asint=None, offset=None, show_all=None, **kwargs):
+        close = self._get_column(kwargs.pop("close", "close"))
+        result = td_seq(close=close, asint=asint, offset=offset, show_all=show_all, **kwargs)
         return self._post_process(result, **kwargs)
 
     def trix(self, length=None, signal=None, scalar=None, drift=None, offset=None, **kwargs):
