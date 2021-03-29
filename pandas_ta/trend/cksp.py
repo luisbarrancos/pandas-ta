@@ -30,7 +30,7 @@ def cksp(high, low, close, p=None, x=None, q=None, offset=None, tvmode=None, **k
     long_stop_ = high.rolling(p).max() - x * atr_
     long_stop = long_stop_.rolling(q).max()
 
-    short_stop_ = high.rolling(p).min() + x * atr_
+    short_stop_ = low.rolling(p).min() + x * atr_
     short_stop = short_stop_.rolling(q).min()
     
     # Offset
