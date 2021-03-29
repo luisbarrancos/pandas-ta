@@ -5,28 +5,26 @@ from pandas_ta.utils import get_offset, verify_series
 
 
 def cksp(high, low, close, p=None, x=None, q=None, offset=None, tvmode=None, **kwargs):
-    """Indicator: Chande Kroll Stop (CKSP)"""
+    """Indicator: Chande Kroll Stop (CKSP)""" 
     # Validate Arguments
-    high = verify_series(high)
-    low = verify_series(low)
-    close = verify_series(close)
-        
-    # TV defaults=(10,1,9), book defaults = (10,3,20)
-    tvmode = tvmode if isinstance(tvmode, bool) else True
-    
+    # TV defaults=(10,1,9), book defaults = (10,3,20)    
     p = int(p) if p and p > 0 else 10
     x = float(x) if x and x > 0 else 1 if tvmode is True else 3
     q = int(q) if q and q > 0 else 9 if tvmode is True else 20
+    tvmode = tvmode if isinstance(tvmode, bool) else True
+
+    _length = max(p, q, x)
+    
+    high = verify_series(high, _length)
+    low = verify_series(low, _length)
+    close = verify_series(close, _length)
     offset = get_offset(offset)
+
+    if high is None or low is None or close is None: return
     
-    # Trading view uses the Welles Wilder MA, but the book, a SMA
     mamode = "rma" if tvmode is True else "sma"
-    
     atr = atr(high=high, low=low, close=close, length=p, mamode = mamode)
     
-    # According to the book, subtract 3*ATR (SMA, 10 periods) from the highest
-    # high of 10 periods. The long stop is the 20 period highest high of this
-    # preliminary long stop. Add the ATR and use lowest for short stops.
     long_stop_ = high.rolling(p).max() - x * atr_
     long_stop = long_stop_.rolling(q).max()
 
