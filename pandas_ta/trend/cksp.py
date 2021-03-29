@@ -4,26 +4,35 @@ from pandas_ta.volatility import atr
 from pandas_ta.utils import get_offset, verify_series
 
 
-def cksp(high, low, close, p=None, x=None, q=None, offset=None, **kwargs):
+def cksp(high, low, close, p=None, x=None, q=None, offset=None, tvmode=None, **kwargs):
     """Indicator: Chande Kroll Stop (CKSP)"""
     # Validate Arguments
     high = verify_series(high)
     low = verify_series(low)
     close = verify_series(close)
+        
+    # TV defaults=(10,1,9), book defaults = (10,3,20)
+    tvmode = tvmode if isinstance(tvmode, bool) else True
+    
     p = int(p) if p and p > 0 else 10
-    x = float(x) if x and x > 0 else 1
-    q = int(q) if q and q > 0 else 9
+    x = float(x) if x and x > 0 else 1 if tvmode is True else 3
+    q = int(q) if q and q > 0 else 9 if tvmode is True else 20
     offset = get_offset(offset)
-
-    # Calculate Result
-    atr_ = atr(high=high, low=low, close=close, length=p)
-
+    
+    # Trading view uses the Welles Wilder MA, but the book, a SMA
+    mamode = "rma" if tvmode is True else "sma"
+    
+    atr = atr(high=high, low=low, close=close, length=p, mamode = mamode)
+    
+    # According to the book, subtract 3*ATR (SMA, 10 periods) from the highest
+    # high of 10 periods. The long stop is the 20 period highest high of this
+    # preliminary long stop. Add the ATR and use lowest for short stops.
     long_stop_ = high.rolling(p).max() - x * atr_
     long_stop = long_stop_.rolling(q).max()
 
     short_stop_ = high.rolling(p).min() + x * atr_
     short_stop = short_stop_.rolling(q).min()
-
+    
     # Offset
     if offset != 0:
         long_stop = long_stop.shift(offset)
@@ -57,14 +66,19 @@ cksp.__doc__ = \
 The Tushar Chande and Stanley Kroll in their book
 “The New Technical Trader”. It is a trend-following indicator,
 identifying your stop by calculating the average true range of
-the recent market volatility.
+the recent market volatility. The indicator defaults to the implementation
+found on tradingview but it provides the original book implementation as well,
+which differs by the default periods and moving average mode. While the trading
+view implementation uses the Welles Wilder moving average, the book uses a
+simple moving average.
 
 Sources:
     https://www.multicharts.com/discussion/viewtopic.php?t=48914
+    "The New Technical Trader", Wikey 1st ed. ISBN 9780471597803, page 95
 
 Calculation:
     Default Inputs:
-        p=10, x=1, q=9
+        p=10, x=1, q=9, tvmode=True
     ATR = Average True Range
 
     LS0 = high.rolling(p).max() - x * ATR(length=p)
@@ -75,10 +89,11 @@ Calculation:
 
 Args:
     close (pd.Series): Series of 'close's
-    p (int): ATR and first stop period. Default: 10
-    x (float): ATR scalar. Default: 1
-    q (int): Second stop period. Default: 9
+    p (int): ATR and first stop period. Default: 10 in both modes
+    x (float): ATR scalar. Default: 1 in TV mode, 3 otherwise
+    q (int): Second stop period. Default: 9 in TV mode, 20 otherwise
     offset (int): How many periods to offset the result. Default: 0
+    tvmode (bool): Trading View or book implementation mode. Default: True
 
 Kwargs:
     fillna (value, optional): pd.DataFrame.fillna(value)
