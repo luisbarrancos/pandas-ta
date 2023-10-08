@@ -3,9 +3,25 @@ import numpy as np
 from pandas import DataFrame, Series
 from pandas_ta.overlap import ma
 from pandas_ta.utils import get_offset, verify_series
+from numba import jit
 
 
-def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mamode=None, offset=None, **kwargs):
+@jit(nopython=True)
+def compute_combined_kernel(L, J):
+    alpha = 2 / (J + 1)
+    k3 = np.array([np.sum([(1 - alpha)**(n - m) for m in range(n+1)]) / L for n in range(L)])
+    return k3
+
+@jit(nopython=True)
+def fast_convolve(signal, kernel):
+    return np.convolve(signal, kernel, 'valid')
+
+@jit(nopython=True)
+def fast_momentum(signal, mom_len):
+    return signal[mom_len:] - signal[:-mom_len]
+
+
+def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, compute_momemtum=False, mamode=None, offset=None, **kwargs):
     """Indicator: True Momentum Oscillator (TMO)"""
 
     # Validate arguments
@@ -21,36 +37,56 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
 
     if open_ is None or close is None: return
 
-    # Calculate the sum of the signum of the price deltas with period L, but
-    # this can be eseen as a convolution with a uniform kernel of all 1s, and
-    # allows some optimization.
-    # Note that the EMA kernels can be combined with the
-    # uniform kernel, for (x[n]*k1)*k2 = x[n]*(k1*k2) = x[n]*k3, where
-    # k3 is the first kernel convolved by the second.
-    delta = close - open_
-    signum_values = np.sign(delta.values)
-    tmo = Series(np.convolve(signum_values, np.ones(tmo_length), 'valid'))
+    # Most indicators compute only the TMO main signal and its smoothed
+    # version with an EMA. The main signal is a EMA of the summation of 
+    # the signum of the price delta. The summation can be seen as a 
+    # convolution with a uniform kernel of all 1s. Since the main TMO
+    # signal is an EMA of length calc_lenght of this summation of
+    # tmo_lenght elements, these can be combined into a single
+    # convolution. Convolution is linear and associative, as such
+    #
+    # ma[n] = (x[n]*k1[n])*k2[n] = x[n] * (k1[n]*k2[n]) = x[n] * k3[n]
+    #
+    # where k3[n] is the the convolution of the uniform all 1s kernel and
+    # the initial EMA with period calc_length. We loose the ability to
+    # support all the Pandas-TA MAs, unless we implement their combined
+    # convolution for all supported types, i.e, SMA, EMA, WMA, ...
+    # which might be counterproductive. Still, for the default case
+    # this leads to
+    #
+    # \begin{equation}
+    # [n] = \begin{cases} \frac{1}{L} \sum_{m=0}^{L-1} (1-\alpha)^{(n-m)} & 
+    # \text{for } n \geq 0 \\ 0 & \text{for } n < 0 \end{cases} \\
+    # \text{where} \alpha = \frac{2}{J}
+    # \end{equation}
+    #
+    # With the default being an EMA, the optimization is tempting enough to
+    # warrant its special case. If the mamode is overriden, then we fallback
+    # to the simple summation and Pandas-TA moving averages.
+    # Try to JIT both the k3 convolution and the timeseries convolution.
+    #
+    signum_values = np.sign(close.values - open_.values)
+    kernel = np.ones(tmo_length) if mamode != "ema" else compute_combined_kernel(tmo_length, calc_length)
+    conv_result = fast_convolve(signum_values, kernel)
 
-    # Normalizing to [-100,100] as shown in the second listed reference, for
-    # this allows the user to easily define overbought and oversold conditions,
-    # typically -80, and 80.
-    normalization_factor = 100 / tmo_length
-    tmo *= normalization_factor
+    # the default EMA uses the combined kernel, otherwise we must use Pandas-TA MAs
+    main_signal = Series(conv_result) if mamode == "ema" else ma(mamode, Series(conv_result), length=calc_length)
+    smooth_signal = ma(mamode, tmo_main_signal, length=smooth_length)
+    mom_main = mom_smooth = 0
 
-    # Rather than using a custom convolution function, use Pandas-TA MAs, since
-    # the user might pass its own choise of moving averages, but the TMO
-    # default is the exponential moving average (EMA).
-    smooth_tmo = ma(mamode, tmo, length=calc_length)
-    main_signal = ma(mamode, smooth_tmo, length=smooth_length)
-    smooth_signal = ma(mamode, main_signal, length=smooth_length)
+    # Some indicators compute an auxiliary momentum for the main and smooth signal
+    if compute_momentum:
+        mom_main = Series(fast_momentum(main_signal.values, smooth_length), index=main_signal.index[smooth_length:])
+        mom_smooth = Series(fast_momentum(smooth_signal.values, smooth_length), index=smooth_signal.index[smooth_length:])
 
     # Apply an offset if you wish to shift the timeseries to compare with
     # other indicators or other data.
+    offset = 0
     if offset != 0:
-        tmo = tmo.shift(offset)
-        smooth_tmo = smooth_tmo.shift(offset)
         main_signal = main_signal.shift(offset)
         smooth_signal = smooth_signal.shift(offset)
+        mom_main = mom_main.shift(offset)
+        mom_smooth = mom_smooth.shift(offset)
 
     # Deal with NaNs in the time series. Unless you specify a method, it will
     # replace all NaNs by zeroes.
@@ -58,26 +94,27 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     fill_method = kwargs.get("fill_method", None)
 
     if fill_value is not None:
-        tmo.fillna(fill_value, inxplace=True)
-        smooth_tmo.fillna(fill_value, inplace=True)
         main_signal.fillna(fill_value, inplace=True)
         smooth_signal.fillna(fill_value, inplace=True)
+        mom_main.fillna(fill_value, inplace=True)
+        mom_smooth.fillna(fill_value, inplace=True)
 
     if fill_method is not None:
-        tmo.fillna(method=fill_method, inplace=True)
-        smooth_tmo.fillna(method=fill_method, inplace=True)
         main_signal.fillna(method=fill_method, inplace=True)
         smooth_signal.fillna(method=fill_method, inplace=True)
+        mom_main.fillna(fill_value, inplace=True)
+        mom_smooth.fillna(fill_value, inplace=True)
 
     # Construct the final DataFrame
     tmo_category = "momentum"
     params = f"{tmo_length}_{calc_length}_{smooth_length}"
 
+#   f"TMO_{params}": tmo[-len(smooth_tmo):],
     df = DataFrame({
-        f"TMO_{params}": tmo[-len(smooth_tmo):],
-        f"TMO_Smooth_{params}": smooth_tmo,
-        f"TMO_Main_Signal_{params}": main_signal,
-        f"TMO_Smooth_Signal_{params}": smooth_signal
+        f"TMO_{params}": main_signal,
+        f"TMO_Smooth_{params}": smooth_signal,
+        f"TMO_Main_Mom_{params}": mom_main,
+        f"TMO_Smooth_Mom_{params}": mom_smooth
     })
 
     df.name = f"TMO_{params}"
@@ -89,62 +126,49 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
 tmo.__doc__ = \
     """True Momentum Oscillator (TMO)
 
-The True Momentum Oscillator (TMO) is designed to capture the "true momentum"
-behind the price action of an asset over a specific period. It measures the net
-buying or selling pressure, by evealuating the signum of the opening and
- closing prices. The oscillator smoothens this measure with a moving average,
- in order to offer a second line with actionable signals. These are useful for
- detecting market trends and reversals, besides crossovers.
-The output is scaled between [-100,100] to easily identify overbought and
-oversold conditions, where these are commonly set at -80 and 80 threshold
-lines.
-The smoothed TMO line is further smoothed into a Main Signal, and this in turn
-into a Smooth Signal, and their crossovers can provide further insights about
-the trends, continuation, reversals. Typically, the Main Signal line is shown
-as green or red, if above or below the Smooth Signal line, or an histogram
-is computing and shaded based on the same criteria.
-In short, the following components are provided:
+The True Momentum Oscillator (TMO) is a technical indicator that aims to capture the 'true momentum'
+underlying the price movement of an asset over a specified time frame. It quantifies the net buying or
+selling pressure by applying smoothing techniques to a sum of the signum of the differences between
+opening and closing prices over the chosen period. Crossovers between the TMO and its smoothed version
+generate signals for potential buying or selling opportunities.
 
-    - TMO: The base momentum indicator summing the signum of open-close deltas
-    - Smooth TMO: a moving average of the TMO, defaulting to an exponential
-      moving average with period `calc_length`
-    - Main Signal: a moving average of the Smooth TMO signal, further smoothing
-      momentum information, with period `smooth_length`
-    - Smooth Signal: a moving average of the Main Signal, providing a final
-      trend smoothing and allowing crossover information to be gathered between
-      the Main Signal and Smooth Signal. This uses the period `smooth_length`
-      as well.
+The TMO values are scaled to lie within the range [-100, 100]. Overbought and oversold conditions are
+commonly identified when the TMO crosses above 70 or below -70, respectively.
+
+Some implementations color the main TMO signal line based on its position relative to the smoothed line
+and may include a histogram to represent the distance between these two lines. Variants of the TMO also
+calculate the rate of change (momentum) for both the TMO and its smoothed version within the same period.
 
 Sources:
     https://www.tradingview.com/script/VRwDppqd-True-Momentum-Oscillator/
     https://www.tradingview.com/script/65vpO7T5-True-Momentum-Oscillator-Universal-Edition/
+    https://www.tradingview.com/script/o9BQyaA4-True-Momentum-Oscillator/
 
 Calculation:
-    Default Inputs:
-        tmo_length=14, calc_length=5, smooth_length=3
+    Default Inputs: `tmo_length=14, calc_length=5, smooth_length=3`
 
     EMA = Exponential Moving Average
     Delta = close - open
     Signum = 1 if Delta > 0, 0 if Delta = 0, -1 if Delta < 0
     SUM = Summation of N given values
-    TMO = SUM(Delta, tmo_length)
-    TMO_Smooth=EMA(TMO, calc_length)
-    TMO_Main_Signal=EMA(TMO_Smooth, smooth_lenght)
-    TMO_Smooth_Signal=EMA(TMO_Main_Signal, smooth_length)
+    MA = EMA(SUM(Delta, tmo_length), calc_length)
+    TMO = EMA(MA, smooth_length)
+    TMOs = EMA(TMO, smooth_length)
 
 Args:
     open_ (pd.Series): Series of 'open' prices.
     close (pd.Series): Series of 'close' prices.
-    tmo_length (int): The period for TMO calculation. Default: 14
-    calc_length (int): The EMA period for Smooth TMO. Default: 5
-    smooth_length (int): The EMA period for Main and Smooth Signals. Default: 3
-    mamode (str): See ```help(ta.ma)```. Default: 'ema'
-    offset (int): How many periods to offset the result. Default: 0
+    tmo_length (int, optional): The period for TMO calculation. Default is 14.
+    calc_length (int, optional): The period for the Exponential Moving Average of the smoothed TMO. Default is 5.
+    smooth_length (int, optional): The period for the Exponential Moving Averages for the Main and Smoothed TMO signals. Default is 3.
+    mamode (str, optional): Specifies the type of moving average. For options, see `help(ta.ma)`. Default is 'ema'.
+    offset (int, optional): Number of periods to offset the final result. Default is 0.
 
 Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
+    fillna (value, optional): Value with which to fill missing entries. See `pd.DataFrame.fillna(value)`.
+    fill_method (str, optional): Method for filling missing entries.
 
 Returns:
-    pd.DataFrame: Columns - [TMO, Smooth_TMO, Main_Signal, Smooth_Signal]
+    pd.DataFrame: Dataframe containing the columns [TMO, TMO_Smooth, TMO_Main_Mom, TMO_Smooth_Mom].
 """
+
