@@ -1,88 +1,92 @@
 # -*- coding: utf-8 -*-
+import numpy as np
 from pandas import DataFrame
 from pandas_ta.overlap import ma
-from pandas_ta.utils import get_drift, get_offset, non_zero_range, verify_series
+from pandas_ta.utils import get_offset, verify_series
 
-def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mamode=None, drift=None, offset=None, **kwargs):
+
+def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mamode=None, offset=None, **kwargs):
     """Indicator: True Momentum Oscillator (TMO)"""
-
-    # Validate arguments (see defaults for TMO, 14/5/3 or 14/6/5)
+    
+    # Validate arguments
     tmo_length = int(tmo_length) if tmo_length and tmo_length > 0 else 14
-    main_signal = int(calc_length) if calc_length and calc_length > 0 else 5
-    smooth_signal = int(smooth_length) if smooth_length and smooth_length > 0 else 3
+    calc_length = int(calc_length) if calc_length and calc_length > 0 else 5
+    smooth_length = int(smooth_length) if smooth_length and smooth_length > 0 else 3
     mamode = mamode if isinstance(mamode, str) else "ema"
-
-    # verify timeseries
-    open_ = verify_series(open_, int(max(tmo_length, calc_length, smooth_length)))
-    close = verify_series(close, int(max(tmo_length, calc_length, smooth_length)))
-    drift = get_drift(drift)
+    
+    # Verify the time series and get the (integer) offset
+    open_ = verify_series(open_, max(tmo_length, calc_length, smooth_length))
+    close = verify_series(close, max(tmo_length, calc_length, smooth_length))
     offset = get_offset(offset)
     
-    if open_ is None or close is None: return
+    if open_ is None or close is None:
+        return
     
-    # Calculate the signum dataset of lenght L from open and close prices,
-    # and sum the values. This is equivalent to a convolution with a kernel
-    # of width tmo_length made of all 1s. This can be done in Numba with
-    # a custom convolution since the uniform kernel and a kernel combination
-    # of a uniform all 1s kernel and a EMA kernel is a 3rd kernel.
-    #
-    signum_values = (close - open).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    # Calculate the sum of the signum of the price deltas with period L, but
+    # this can be eseen as a convolution with a uniform kernel of all 1s, and
+    # allows some optimization.
+    # Note that the EMA kernels can be combined with the 
+    # uniform kernel, for (x[n]*k1)*k2 = x[n]*(k1*k2) = x[n]*k3, where
+    # k3 is the first kernel convolved by the second. 
+    delta = close - open_
+    signum_values = np.sign(delta.values)
+    tmo = np.convolve(signum_values, np.ones(tmo_length), 'valid')
     
-    tmo = signum_values.rolling(tmo_length).sum()
-    smooth_tmo = ma(mamode, tmo, length=calc_length)
+    # Normalizing to [-100,100] as shown in the second listed reference, for
+    # this allows the user to easily define overbought and oversold conditions,
+    # typically -80, and 80.
+    normalization_factor = 100 / tmo_length
+    tmo *= normalization_factor
     
-    # Moving averages of the Smooth TMO and Main Signal respectively
+    # Rather than using a custom convolution function, use Pandas-TA MAs, since
+    # the user might pass its own choise of moving averages, but the TMO 
+    # default is the exponential moving average (EMA).
+    smooth_tmo = ma(mamode, DataFrame({'values': tmo}), length=calc_length)['values']
     main_signal = ma(mamode, smooth_tmo, length=smooth_length)
     smooth_signal = ma(mamode, main_signal, length=smooth_length)
-    
-    # i think we need to deal with offset as well
+
+    # Apply an offset if you wish to shift the timeseries to compare with
+    # other indicators or other data.
     if offset != 0:
-        tmo = tmo.shift(offset)
+        tmo = np.roll(tmo, offset)
         smooth_tmo = smooth_tmo.shift(offset)
         main_signal = main_signal.shift(offset)
         smooth_signal = smooth_signal.shift(offset)
-        
-    # Deal with NaNs, and fill them with the method provided by fill_method,
-    # or if no method provided, the default fills NaNs with zeros.
-    if "fillna" in kwargs:
-        tmo.fillna(kwargs["fillna"], inplace=True)
-        smooth_tmo.fillna(kwargs["fillna"], inplace=True)
-        main_signal.fillna(kwargs["fillna"], inplace=True)
-        smooth_signal.fillna(kwargs["fillna"], inplace=True)
-        
-    if "fill_method" in kwargs:
-        tmo.fillna(method=kwargs["fill_method"], inplace=True)
-        smooth_tmo.fillna(method=kwargs["fill_method"], inplace=True)
-        main_signal.fillna(method=kwargs["fill_method"], inplace=True)
-        smooth_signal.fillna(method=kwargs["fill_method"], inplace=True)       
 
-    result = pd.DataFrame({
-        'TMO': tmo,
-        'TMO_Smooth': smooth_tmo,
-        'TMO_Main_Signal': main_signal,
-        'TMO_Smooth_Signal': smooth_signal
-    })
+    # Deal with NaNs in the time series. Unless you specify a method, it will
+    # replace all NaNs by zeroes.
+    fill_value = kwargs.get("fillna", None)
+    fill_method = kwargs.get("fill_method", None)
     
-    tmo.name = f"TMO_{tmo_length}_{calc_length}_{smooth_length}"
-    tmo_smooth.name = f"TMO_Smooth_{tmo_length}_{calc_length}_{smooth_length}"
-    tmo_main_signal.name = "TMO_Main_Signal_{tmo_length}_{calc_length}_{smooth_length}"
-    tmo_smooth_signal.name = "TMO_Smooth_Signal_{tmo_length}_{calc_length}_{smooth_length}"
-    tmo.category = tmo_smooth.category = tmo_main_signal.category = tmo_smooth_signal.category = "momentum"
+    if fill_value is not None:
+        smooth_tmo.fillna(fill_value, inplace=True)
+        main_signal.fillna(fill_value, inplace=True)
+        smooth_signal.fillna(fill_value, inplace=True)
+        
+    if fill_method is not None:
+        smooth_tmo.fillna(method=fill_method, inplace=True)
+        main_signal.fillna(method=fill_method, inplace=True)
+        smooth_signal.fillna(method=fill_method, inplace=True)
+        
+    # Construct the final DataFrame
+    tmo_category = "momentum"
+    params = f"{tmo_length}_{calc_length}_{smooth_length}"
     
-    # Prepare dataframe
     df = DataFrame({
-            tmo.name: tmo,
-            tmo_smooth.name: smooth_tmo,
-            tmo_main_signal.name: main_signal,
-            tmo_smooth_signal.name: smooth_signal
-            })
-    
-    df.name = f"TMO_{tmo_length}_{calc_length}_{smooth_length}"
+        f"TMO_{params}": tmo[-len(smooth_tmo):],
+        f"TMO_Smooth_{params}": smooth_tmo,
+        f"TMO_Main_Signal_{params}": main_signal,
+        f"TMO_Smooth_Signal_{params}": smooth_signal
+    })
 
-    return result
+    df.name = f"TMO_{params}"
+    df.category = tmo_category
+    
+    return df
+
 
 tmo.__doc__ = \
-"""True Momentum Oscillator (TMO)
+    """True Momentum Oscillator (TMO)
 
 The True Momentum Oscillator (TMO) is designed to capture the "true momentum"
 behind the price action of an asset over a specific period. It measures the net
@@ -99,11 +103,16 @@ the trends, continuation, reversals. Typically, the Main Signal line is shown
 as green or red, if above or below the Smooth Signal line, or an histogram
 is computing and shaded based on the same criteria.
 In short, the following components are provided:
-    
+
     - TMO: The base momentum indicator summing the signum of open-close deltas
-    - Smooth TMO: a moving average of the TMO, defaulting to an exponential moving average with period `calc_length`
-    - Main Signal: a moving average of the Smooth TMO signal, further smoothing momentum information, with period `smooth_length`
-    - Smooth Signal: a moving average of the Main Signal, providing a final trend smoothing and allowing crossover information to be gathered between the Main Signal and Smooth Signal. This uses the period `smooth_length` as well.
+    - Smooth TMO: a moving average of the TMO, defaulting to an exponential
+      moving average with period `calc_length`
+    - Main Signal: a moving average of the Smooth TMO signal, further smoothing
+      momentum information, with period `smooth_length`
+    - Smooth Signal: a moving average of the Main Signal, providing a final
+      trend smoothing and allowing crossover information to be gathered between
+      the Main Signal and Smooth Signal. This uses the period `smooth_length`
+      as well.
 
 Sources:
     https://www.tradingview.com/script/VRwDppqd-True-Momentum-Oscillator/
@@ -112,10 +121,15 @@ Sources:
 Calculation:
     Default Inputs:
         tmo_length=14, calc_length=5, smooth_length=3
-
+        
     EMA = Exponential Moving Average
-    OO  = Opening price
-    CC  = Closing price
+    Delta = close - open
+    Signum = 1 if Delta > 0, 0 if Delta = 0, -1 if Delta < 0
+    SUM = Summation of N given values
+    TMO = SUM(Delta, tmo_length)
+    TMO_Smooth=EMA(TMO, calc_length)
+    TMO_Main_Signal=EMA(TMO_Smooth, smooth_lenght)
+    TMO_Smooth_Signal=EMA(TMO_Main_Signal, smooth_length)
 
 Args:
     open_ (pd.Series): Series of 'open' prices.
