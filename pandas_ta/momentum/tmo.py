@@ -7,39 +7,39 @@ from pandas_ta.utils import get_offset, verify_series
 
 def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mamode=None, offset=None, **kwargs):
     """Indicator: True Momentum Oscillator (TMO)"""
-    
+
     # Validate arguments
     tmo_length = int(tmo_length) if tmo_length and tmo_length > 0 else 14
     calc_length = int(calc_length) if calc_length and calc_length > 0 else 5
     smooth_length = int(smooth_length) if smooth_length and smooth_length > 0 else 3
     mamode = mamode if isinstance(mamode, str) else "ema"
-    
+
     # Verify the time series and get the (integer) offset
     open_ = verify_series(open_, max(tmo_length, calc_length, smooth_length))
     close = verify_series(close, max(tmo_length, calc_length, smooth_length))
     offset = get_offset(offset)
-    
+
     if open_ is None or close is None:
         return
-    
+
     # Calculate the sum of the signum of the price deltas with period L, but
     # this can be eseen as a convolution with a uniform kernel of all 1s, and
     # allows some optimization.
-    # Note that the EMA kernels can be combined with the 
+    # Note that the EMA kernels can be combined with the
     # uniform kernel, for (x[n]*k1)*k2 = x[n]*(k1*k2) = x[n]*k3, where
-    # k3 is the first kernel convolved by the second. 
+    # k3 is the first kernel convolved by the second.
     delta = close - open_
     signum_values = np.sign(delta.values)
     tmo = np.convolve(signum_values, np.ones(tmo_length), 'valid')
-    
+
     # Normalizing to [-100,100] as shown in the second listed reference, for
     # this allows the user to easily define overbought and oversold conditions,
     # typically -80, and 80.
     normalization_factor = 100 / tmo_length
     tmo *= normalization_factor
-    
+
     # Rather than using a custom convolution function, use Pandas-TA MAs, since
-    # the user might pass its own choise of moving averages, but the TMO 
+    # the user might pass its own choise of moving averages, but the TMO
     # default is the exponential moving average (EMA).
     smooth_tmo = ma(mamode, DataFrame({'values': tmo}), length=calc_length)['values']
     main_signal = ma(mamode, smooth_tmo, length=smooth_length)
@@ -57,21 +57,21 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     # replace all NaNs by zeroes.
     fill_value = kwargs.get("fillna", None)
     fill_method = kwargs.get("fill_method", None)
-    
+
     if fill_value is not None:
         smooth_tmo.fillna(fill_value, inplace=True)
         main_signal.fillna(fill_value, inplace=True)
         smooth_signal.fillna(fill_value, inplace=True)
-        
+
     if fill_method is not None:
         smooth_tmo.fillna(method=fill_method, inplace=True)
         main_signal.fillna(method=fill_method, inplace=True)
         smooth_signal.fillna(method=fill_method, inplace=True)
-        
+
     # Construct the final DataFrame
     tmo_category = "momentum"
     params = f"{tmo_length}_{calc_length}_{smooth_length}"
-    
+
     df = DataFrame({
         f"TMO_{params}": tmo[-len(smooth_tmo):],
         f"TMO_Smooth_{params}": smooth_tmo,
@@ -81,7 +81,7 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
 
     df.name = f"TMO_{params}"
     df.category = tmo_category
-    
+
     return df
 
 
@@ -93,7 +93,7 @@ behind the price action of an asset over a specific period. It measures the net
 buying or selling pressure, by evealuating the signum of the opening and
  closing prices. The oscillator smoothens this measure with a moving average,
  in order to offer a second line with actionable signals. These are useful for
- detecting market trends and reversals, besides crossovers. 
+ detecting market trends and reversals, besides crossovers.
 The output is scaled between [-100,100] to easily identify overbought and
 oversold conditions, where these are commonly set at -80 and 80 threshold
 lines.
@@ -121,7 +121,7 @@ Sources:
 Calculation:
     Default Inputs:
         tmo_length=14, calc_length=5, smooth_length=3
-        
+
     EMA = Exponential Moving Average
     Delta = close - open
     Signum = 1 if Delta > 0, 0 if Delta = 0, -1 if Delta < 0
