@@ -238,6 +238,13 @@ class TestMomentumExtension(TestCase):
         self.data.ta.td_seq(show_all=True, append=True)
         self.assertIsInstance(self.data, DataFrame)
         self.assertEqual(list(self.data.columns[-2:]), ["TD_SEQ_UPa", "TD_SEQ_DNa"])
+        
+    def test_tmo_ext(self):
+        self.data.ta.tmo(append=True)
+        self.assertIsInstance(self.data, DataFrame)
+        self.assertIsEqual(
+                list(self.data.columns[-4:]), 
+                ["TMO_14_5_3", "TMO_Smooth_14_5_3", "TMO_Main_Signal_14_5_3", "TMO_Smooth_Signal_14_5_3"])
 
     def test_trix_ext(self):
         self.data.ta.trix(append=True)

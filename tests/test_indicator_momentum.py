@@ -490,6 +490,11 @@ class TestMomentum(TestCase):
         result = pandas_ta.td_seq(self.close)
         self.assertIsInstance(result, DataFrame)
         self.assertEqual(result.name, "TD_SEQ")
+        
+    def test_tmo(self):
+        result = pandas_ta.tmo(self.open, self.close)
+        self.assertIsInstance(result, DataFrame)
+        self.assertEqual(result.name, "TMO_14_5_3")
 
     def test_trix(self):
         result = pandas_ta.trix(self.close)
