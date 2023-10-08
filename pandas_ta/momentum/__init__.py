@@ -36,6 +36,7 @@ from .stc import stc
 from .stoch import stoch
 from .stochrsi import stochrsi
 from .td_seq import td_seq
+from .tmo import tmo
 from .trix import trix
 from .tsi import tsi
 from .uo import uo
