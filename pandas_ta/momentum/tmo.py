@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from pandas_ta.overlap import ma
 from pandas_ta.utils import get_offset, verify_series
 
@@ -19,8 +19,7 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     close = verify_series(close, max(tmo_length, calc_length, smooth_length))
     offset = get_offset(offset)
 
-    if open_ is None or close is None:
-        return
+    if open_ is None or close is None: return
 
     # Calculate the sum of the signum of the price deltas with period L, but
     # this can be eseen as a convolution with a uniform kernel of all 1s, and
@@ -30,7 +29,7 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     # k3 is the first kernel convolved by the second.
     delta = close - open_
     signum_values = np.sign(delta.values)
-    tmo = np.convolve(signum_values, np.ones(tmo_length), 'valid')
+    tmo = Series(np.convolve(signum_values, np.ones(tmo_length), 'valid'))
 
     # Normalizing to [-100,100] as shown in the second listed reference, for
     # this allows the user to easily define overbought and oversold conditions,
@@ -41,14 +40,14 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     # Rather than using a custom convolution function, use Pandas-TA MAs, since
     # the user might pass its own choise of moving averages, but the TMO
     # default is the exponential moving average (EMA).
-    smooth_tmo = ma(mamode, DataFrame({'values': tmo}), length=calc_length)['values']
+    smooth_tmo = ma(mamode, tmo, length=calc_length)
     main_signal = ma(mamode, smooth_tmo, length=smooth_length)
     smooth_signal = ma(mamode, main_signal, length=smooth_length)
 
     # Apply an offset if you wish to shift the timeseries to compare with
     # other indicators or other data.
     if offset != 0:
-        tmo = np.roll(tmo, offset)
+        tmo = tmo.shift(offset)
         smooth_tmo = smooth_tmo.shift(offset)
         main_signal = main_signal.shift(offset)
         smooth_signal = smooth_signal.shift(offset)
@@ -59,11 +58,13 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     fill_method = kwargs.get("fill_method", None)
 
     if fill_value is not None:
+        tmo.fillna(fill_value, inxplace=True)
         smooth_tmo.fillna(fill_value, inplace=True)
         main_signal.fillna(fill_value, inplace=True)
         smooth_signal.fillna(fill_value, inplace=True)
 
     if fill_method is not None:
+        tmo.fillna(method=fill_method, inplace=True)
         smooth_tmo.fillna(method=fill_method, inplace=True)
         main_signal.fillna(method=fill_method, inplace=True)
         smooth_signal.fillna(method=fill_method, inplace=True)
