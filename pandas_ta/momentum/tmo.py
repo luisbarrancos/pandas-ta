@@ -5,23 +5,29 @@ from pandas_ta.overlap import ma
 from pandas_ta.utils import get_offset, verify_series
 from numba import jit
 
+@jit(nopython=True)
+def fast_convolve(signal, kernel):
+    output_length = len(signal) - len(kernel) + 1
+    output = np.zeros(output_length)
+    for i in range(output_length):
+        output[i] = np.sum(signal[i:i+len(kernel)] * kernel)
+    return output
 
 @jit(nopython=True)
 def compute_combined_kernel(L, J):
     alpha = 2 / (J + 1)
-    k3 = np.array([np.sum([(1 - alpha)**(n - m) for m in range(n+1)]) / L for n in range(L)])
+    k3 = np.array([(1 - alpha)**np.arange(n, -1, -1).sum() / L for n in range(L)])
     return k3
 
 @jit(nopython=True)
-def fast_convolve(signal, kernel):
-    return np.convolve(signal, kernel, 'valid')
-
-@jit(nopython=True)
 def fast_momentum(signal, mom_len):
+    if mom_len >= len(signal):
+        return np.zeros(0)
     return signal[mom_len:] - signal[:-mom_len]
 
 
-def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, compute_momemtum=False, mamode=None, offset=None, **kwargs):
+def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mamode=None,
+        compute_momentum=False, normalize_signum=False, offset=None, **kwargs):
     """Indicator: True Momentum Oscillator (TMO)"""
 
     # Validate arguments
@@ -29,6 +35,8 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, com
     calc_length = int(calc_length) if calc_length and calc_length > 0 else 5
     smooth_length = int(smooth_length) if smooth_length and smooth_length > 0 else 3
     mamode = mamode if isinstance(mamode, str) else "ema"
+    compute_momentum = compute_momentum if isinstance(compute_momentum, bool) else False
+    normalize_signum = normalize_signum if isinstance(normalize_signum, bool) else False
 
     # Verify the time series and get the (integer) offset
     open_ = verify_series(open_, max(tmo_length, calc_length, smooth_length))
@@ -65,23 +73,49 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, com
     # to the simple summation and Pandas-TA moving averages.
     # Try to JIT both the k3 convolution and the timeseries convolution.
     #
-    signum_values = np.sign(close.values - open_.values)
-    kernel = np.ones(tmo_length) if mamode != "ema" else compute_combined_kernel(tmo_length, calc_length)
-    conv_result = fast_convolve(signum_values, kernel)
-
+    # signum_values = np.sign(close.values - open_.values)
+    # kernel = np.ones(tmo_length) if mamode != "ema" else compute_combined_kernel(tmo_length, calc_length)
+    # conv_result = fast_convolve(signum_values, kernel)
+    #
     # the default EMA uses the combined kernel, otherwise we must use Pandas-TA MAs
-    main_signal = Series(conv_result) if mamode == "ema" else ma(mamode, Series(conv_result), length=calc_length)
-    smooth_signal = ma(mamode, tmo_main_signal, length=smooth_length)
-    mom_main = mom_smooth = 0
-
-    # Some indicators compute an auxiliary momentum for the main and smooth signal
+    # main_signal = Series(conv_result) if mamode == "ema" else ma(mamode, Series(conv_result), length=calc_length)
+    # smooth_signal = ma(mamode, main_signal, length=smooth_length)
+    
+    # Calculate the signum of the (close - open) price delta
+    signum_values = Series(close - open_).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    sum_signum = signum_values.rolling(window=tmo_length).sum()
+    
+    if normalize_signum:
+        # MA periods verified for > 0, no need to check again for potential
+        # division by zero.
+        sum_signum /= tmo_length
+    
+    initial_ema = ma(mamode, sum_signum, length=calc_length)
+    
+    main_signal = ma(mamode, initial_ema, length=smooth_length)
+    smooth_signal = ma(mamode, main_signal, length=smooth_length)
+    
     if compute_momentum:
-        mom_main = Series(fast_momentum(main_signal.values, smooth_length), index=main_signal.index[smooth_length:])
-        mom_smooth = Series(fast_momentum(smooth_signal.values, smooth_length), index=smooth_signal.index[smooth_length:])
+        mom_main = main_signal - main_signal.shift(tmo_length)
+        mom_smooth = smooth_signal - smooth_signal.shift(tmo_length)
+    else:
+        mom_main = mom_smooth = 0
+    
+    if compute_momentum:
+        mom_main = Series(
+                fast_momentum(
+                        main_signal.values, smooth_length),
+                        index=main_signal.index[smooth_length:])
+        mom_smooth = Series(
+                fast_momentum(
+                        smooth_signal.values, smooth_length), 
+                        index=smooth_signal.index[smooth_length:])
+    else:
+        mom_main = Series([0] * len(main_signal), index=main_signal.index)
+        mom_smooth = Series([0] * len(smooth_signal), index=smooth_signal.index)
 
     # Apply an offset if you wish to shift the timeseries to compare with
     # other indicators or other data.
-    offset = 0
     if offset != 0:
         main_signal = main_signal.shift(offset)
         smooth_signal = smooth_signal.shift(offset)
