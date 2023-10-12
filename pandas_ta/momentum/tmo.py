@@ -22,12 +22,12 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     offset = get_offset(offset)
 
     if open_ is None or close is None:
-        return
+        return None
 
     signum_values = Series(close - open_).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
     sum_signum = signum_values.rolling(window=tmo_length).sum()
     if normalize_signal:
-        sum_signum = sum_signum * 100 / tmo_length # tmo_lenght already checked for > 0
+        sum_signum = sum_signum * 100 / tmo_length
 
     initial_ema = ma(mamode, sum_signum, length=calc_length)
     main_signal = ma(mamode, initial_ema, length=smooth_length)
@@ -82,22 +82,22 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
 
     return df
 
-
 tmo.__doc__ = \
     """True Momentum Oscillator (TMO)
 
 The True Momentum Oscillator (TMO) is an indicator that aims to capture the
 true momentum underlying the price movement of an asset over a specified time
 frame. It quantifies the net buying and selling pressure by summing and then
-smoothing the signum of the closing and opening price difference over the given
-period, and then computing a main and smooth signal with a series of moving
-averages. Crossovers between the main and smoth signal generate potential
-signals for buying and selling opportunities.
+smoothing the signum of the closing and opening price difference over the
+given period, and then computing a main and smooth signal with a series of
+moving averages.
+Crossovers between the main and smoth signal generate potential signals for
+buying and selling opportunities.
 Some platforms present versions of this indicator with an optional momentum
 calculation for the main TMO signal and its smooth version, as well as the
 possibility to normalize the signals to the [-100,100] range, which has the
 added benefit of allowing the definition of overbought and oversold regions,
-typically at values of -70 and 70.
+typically -70 and 70.
 
 Sources:
     https://www.tradingview.com/script/VRwDppqd-True-Momentum-Oscillator/
@@ -118,19 +118,27 @@ Calculation:
 Args:
     open_ (pd.Series): Series of 'open' prices.
     close (pd.Series): Series of 'close' prices.
-    tmo_length (int, optional): The period for TMO calculation. Default is 14.
-    calc_length (int, optional): The period for the Exponential Moving Average of the smoothed TMO. Default is 5.
-    smooth_length (int, optional): The period for the Exponential Moving Averages for the Main and Smoothed TMO signals. Default is 3.
-    mamode (str, optional): Specifies the type of moving average. For options, see `help(ta.ma)`. Default is 'ema'.
-    compute_momentum (bool, optional): Sets the aditional computation of the main and smooth signal momentums.
-    normalize_signal (bool, optional): Sets the normalization of the main and smooth signal to [-100,100] range.
-    offset (int, optional): Number of periods to offset the final result. Default is 0.
+    tmo_length (int, optional): The period for TMO calculation, with a default
+    value of 14.
+    calc_length (int, optional): The period for the Exponential Moving Average
+    of the smoothed TMO, defaulting to 5.
+    smooth_length (int, optional): The period for the Exponential Moving
+    Averages for the Main and Smoothed TMO signals. The default value is 3.
+    mamode (str, optional): Specifies the type of moving average. For options,
+    see `help(ta.ma)`. Default is 'ema'.
+    compute_momentum (bool, optional): Sets the aditional computation of the
+    main and smooth signal momentums. The default value is False.
+    normalize_signal (bool, optional): Sets the normalization of the main and
+    smooth signal to [-100,100] range. The default value is False.
+    offset (int, optional): Number of periods to offset the final result. The
+    default value is 0.
 
 Kwargs:
-    fillna (value, optional): Value with which to fill missing entries. See `pd.DataFrame.fillna(value)`.
+    fillna (value, optional): Value with which to fill missing entries.
+    See `pd.DataFrame.fillna(value)`.
     fill_method (str, optional): Method for filling missing entries.
 
 Returns:
-    pd.DataFrame: Dataframe containing the columns [TMO, TMO_Smooth, TMO_Main_Mom, TMO_Smooth_Mom].
+    pd.DataFrame: Dataframe containing the columns:
+    [TMO, TMO_Smooth, TMO_Main_Mom, TMO_Smooth_Mom].
 """
-
