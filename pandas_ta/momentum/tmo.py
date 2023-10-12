@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import numpy as np
 from pandas import DataFrame, Series
 from pandas_ta.overlap import ma
 from pandas_ta.utils import get_offset, verify_series
@@ -22,26 +21,27 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
     close = verify_series(close, max(tmo_length, calc_length, smooth_length))
     offset = get_offset(offset)
 
-    if open_ is None or close is None: return
+    if open_ is None or close is None:
+        return
 
     signum_values = Series(close - open_).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
     sum_signum = signum_values.rolling(window=tmo_length).sum()
     if normalize_signal:
         sum_signum = sum_signum * 100 / tmo_length # tmo_lenght already checked for > 0
-    
-    initial_ema = ma(mamode, sum_signum, length=calc_length)   
+
+    initial_ema = ma(mamode, sum_signum, length=calc_length)
     main_signal = ma(mamode, initial_ema, length=smooth_length)
     smooth_signal = ma(mamode, main_signal, length=smooth_length)
-    
+
     if compute_momentum:
         mom_main = main_signal - main_signal.shift(tmo_length)
         mom_smooth = smooth_signal - smooth_signal.shift(tmo_length)
     else:
         mom_main = Series([0] * len(main_signal), index=main_signal.index)
         mom_smooth = Series([0] * len(smooth_signal), index=smooth_signal.index)
-        
+
     # Apply an offset if you wish to shift the timeseries to compare with
-    # other indicators or other data.    
+    # other indicators or other data.
     if offset != 0:
         main_signal = main_signal.shift(offset)
         smooth_signal = smooth_signal.shift(offset)
@@ -86,7 +86,7 @@ def tmo(open_, close, tmo_length=None, calc_length=None, smooth_length=None, mam
 tmo.__doc__ = \
     """True Momentum Oscillator (TMO)
 
-The True Momentum Oscillator (TMO) is an indicator that aims to capture the 
+The True Momentum Oscillator (TMO) is an indicator that aims to capture the
 true momentum underlying the price movement of an asset over a specified time
 frame. It quantifies the net buying and selling pressure by summing and then
 smoothing the signum of the closing and opening price difference over the given
