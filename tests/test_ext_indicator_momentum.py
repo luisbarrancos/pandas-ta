@@ -244,7 +244,7 @@ class TestMomentumExtension(TestCase):
         self.assertIsInstance(self.data, DataFrame)
         self.assertIsEqual(
                 list(self.data.columns[-4:]), 
-                ["TMO_14_5_3", "TMO_Smooth_14_5_3", "TMO_Main_Signal_14_5_3", "TMO_Smooth_Signal_14_5_3"])
+                ["TMO_14_5_3", "TMO_Smooth_14_5_3", "TMO_Main_Mom_14_5_3", "TMO_Smooth_Mom_14_5_3"])
 
     def test_trix_ext(self):
         self.data.ta.trix(append=True)
