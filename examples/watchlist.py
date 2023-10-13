@@ -2,7 +2,6 @@
 import datetime as dt
 
 from pathlib import Path
-from random import random
 from typing import Tuple
 
 import pandas as pd  # pip install pandas
@@ -19,7 +18,10 @@ import alphaVantageAPI as AV # pip install alphaVantage-api
 import pandas_ta as ta # pip install pandas_ta
 
 
-def colors(colors: str = None, default: str = "GrRd"):
+def colors(colors: str = None, default: str = "GrRd") -> dict:
+    """A Helper Function to that returns a dict of 'common' color groups.
+    - Modify per use case or preferred theme
+    """
     aliases = {
         # Pairs
         "BkGy": ["black", "gray"],
@@ -34,6 +36,7 @@ def colors(colors: str = None, default: str = "GrRd"):
         "GyPr": ["gray", "purple"],
         "GySv": ["gray", "silver"],
         "RdGr": ["red", "green"],
+        "RdGy": ["red", "gray"],
         "SvGy": ["silver", "gray"],
         # Triples
         "BkGrRd": ["black", "green", "red"],
@@ -58,9 +61,9 @@ class Watchlist(object):
     """
     # Watchlist Class (** This is subject to change! **)
     A simple Class to load/download financial market data and automatically
-    apply Technical Analysis indicators with a Pandas TA Strategy.
+    apply Technical Analysis indicators with a Pandas TA Study.
 
-    Default Strategy: pandas_ta.CommonStrategy
+    Default Study: pandas_ta.CommonStudy
 
     ## Package Support:
     ### Data Source (Default: AlphaVantage)
@@ -77,18 +80,19 @@ class Watchlist(object):
 
     def __init__(self,
         tickers: list, tf: str = None, name: str = None,
-        strategy: ta.Strategy = None, ds_name: str = "av", **kwargs,
+        study: ta.Study = None, ds_name: str = "av", **kwargs,
     ):
         self.verbose = kwargs.pop("verbose", False)
         self.debug = kwargs.pop("debug", False)
         self.timed = kwargs.pop("timed", False)
+        self.strategy = kwargs.pop("strategy", study) # Temporary
 
         self.tickers = tickers
         self.tf = tf
         self.name = name if isinstance(name, str) else f"Watch: {', '.join(tickers)}"
         self.data = None
         self.kwargs = kwargs
-        self.strategy = strategy
+        self.study = self.strategy
 
         self._init_data_source(ds_name)
 
@@ -144,9 +148,9 @@ class Watchlist(object):
             _last = kwargs.pop("last", 252)
             _title = kwargs.pop("title", f"{df.ticker}   {_time}   [{self.ds_name}]")
 
-            col = kwargs.pop("close", "close")
+            col = kwargs.pop("Close", "Close")
             if mas:
-                # df.ta.strategy(self.strategy, append=True)
+                # df.ta.study(self.study, append=True)
                 price = df[[col, "SMA_10", "SMA_20", "SMA_50", "SMA_200"]]
             else:
                 price = df[col]
@@ -191,23 +195,23 @@ class Watchlist(object):
                 return
         else:
             print(f"[+] Downloading[{self.ds_name}]: {ticker}[{tf}]")
+            df = pd.DataFrame()
             if self.ds_name == "av":
                 df = self.ds.data(ticker, tf)
                 if not df.ta.datetime_ordered:
                     df = df.set_index(pd.DatetimeIndex(df[index]))
             if self.ds_name == "yahoo":
-                yf_data = self.ds.Ticker(ticker)
-                df = yf_data.history(period="max")
+                df = df.ta.ticker(ticker, timed=self.timed, returns=True)
                 to_save = f"{self.file_path}/{ticker}_{tf}.csv"
                 print(f"[+] Saving: {to_save}")
-                df.to_csv(to_save)
+                df.to_csv(to_save, mode="a")
 
         # Remove select columns
         df = self._drop_columns(df, drop)
 
         if kwargs.pop("analyze", True):
-            if self.debug: print(f"[+] TA[{len(self.strategy.ta)}]: {self.strategy.name}")
-            df.ta.strategy(self.strategy, timed=self.timed, **kwargs)
+            if self.debug: print(f"[+] TA[{len(self.study.ta)}]: {self.study.name}")
+            df.ta.study(self.study, timed=self.timed, **kwargs)
 
         df.ticker = ticker # Attach ticker to the DataFrame
         df.tf = tf
@@ -252,7 +256,19 @@ class Watchlist(object):
         if value is not None and isinstance(value, ta.Strategy):
             self._strategy = value
         else:
-            self._strategy = ta.CommonStrategy
+            self._strategy = ta.CommonStudy
+
+    @property
+    def study(self) -> ta.Study:
+        """Sets a valid Study. Default: pandas_ta.CommonStudy"""
+        return self._study
+
+    @study.setter
+    def study(self, value: ta.Study) -> None:
+        if value is not None and isinstance(value, ta.Study):
+            self._study = value
+        else:
+            self._study = ta.CommonStudy
 
     @property
     def tf(self) -> str:
@@ -305,7 +321,7 @@ class Watchlist(object):
         pd.DataFrame().ta.indicators(*args, **kwargs)
 
     def __repr__(self) -> str:
-        s = f"Watch(name='{self.name}', ds_name='{self.ds_name}', tickers[{len(self.tickers)}]='{', '.join(self.tickers)}', tf='{self.tf}', strategy[{self.strategy.total_ta()}]='{self.strategy.name}'"
+        s = f"Watch(name='{self.name}', ds_name='{self.ds_name}', tickers[{len(self.tickers)}]='{', '.join(self.tickers)}', tf='{self.tf}', study[{self.study.total_ta()}]='{self.study.name}'"
         if self.data is not None:
             s += f", data[{len(self.data.keys())}])"
             return s

@@ -112,6 +112,9 @@ env/**
 # vscode settings
 .vscode/**
 
+# zed settings
+.zed/**
+
 # Original Source (Dev)
 pandas_ta/_wrapper.py
 
@@ -121,16 +124,17 @@ setup.cfg
 doc.py
 pandas_pips
 reqs.txt
+az.py
 driver.py
 qd.py
 tdseq.py
+pandas-ta.json
 
 # Local package installs
 ta-lib/
 AlphaVantageAPI/
 
 # Data & NB Exclusions
-*.csv
 data/datas.csv
 data/f500.csv
 data/GLD_D_tv.csv
@@ -142,5 +146,9 @@ data/SPY_D_TV3.csv
 data/TV_5min.csv
 data/tulip.csv
 examples/*.csv
-jnb/*.ipynb
-jnb/*.txt
+jnb/*
+csv/*
+
+*.txt
+df_file
+/.vs/slnx.sqlite
